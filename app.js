@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const url = require('url');
+const etag = require('etag');
 http
   .createServer((req, res) => {
     const {pathname} = url.parse(req.url);
@@ -50,7 +51,31 @@ http
       res.setHeader('last-modified', mtime.toUTCString());
       res.setHeader('Cache-Control', 'no-cache');
       res.end(data);
+    } else if (pathname === '/image/03.jpg') {
+      /**
+       * 基于etag来进行协商缓存
+       * 基于不同资源进行哈希运算所生成的一个字符串
+       * 该字符串只要文件内容编码存在差异，etag必定发生改变
+       * 后续所有请求都会携带请求头 If-None-Match 将响应传递的etag值带过来
+       * =====>缺点：
+       * 生成etag需要消耗额外的性能
+       * 强验证（需要完全匹配）和弱验证（自定义部分匹配，但这样又可能匹配不上）按需选择
+       */
+      const data = fs.readFileSync('./image/03.jpg');
+      const etagContent = etag(data);
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch === etagContent) {
+        res.statusCode = 304;
+        res.end();
+        return;
+      }
+      res.setHeader('etag', etagContent);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.end(data);
     } else {
+      /**
+       * 如果直接将Cache-Control设置为 no-store 则表示不适用缓存
+       */
       res.statusCode = 404;
       res.end();
     }
